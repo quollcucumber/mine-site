@@ -1,13 +1,3 @@
----
-title: Mine Site
-emoji: "⛏"
-colorFrom: gray
-colorTo: green
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # Mine Site
 
 Mine Site is a small, transparent site template with an **opt-in** Monero
@@ -43,25 +33,34 @@ Environment variables:
 * `XMR_WALLET` — wallet address; required to enable mining
 * `PORT` — HTTP port (default `8080`)
 
-## Deploying to Hugging Face Spaces (free, no card)
-
-The README front matter and `Dockerfile` make this repo a Docker Space.
-
-1. Create a Space at https://huggingface.co/new-space (SDK: **Docker**, blank template).
-2. In the Space **Settings → Variables and secrets**, add the secret `XMR_WALLET`.
-3. Push this repo to the Space, either manually
-   (`git push https://huggingface.co/spaces/<user>/<space> main`, using a write
-   token as the password) or automatically via `.github/workflows/sync-to-hf.yml`:
-   in the GitHub repo add the secret `HF_TOKEN` (a Hugging Face write token) and
-   the variable `HF_SPACE` (`<user>/<space>`).
-
-The Space builds the image and serves the site on its public URL.
-
 ## Deploying to Render
 
 `render.yaml` defines a free-tier Node web service (Render requires a card for
 identity verification). Choose **New → Blueprint**, pick this repo, and set
 `XMR_WALLET` when prompted.
+
+## Deploying to Cloudflare Workers (free, no card)
+
+Create an account at https://dash.cloudflare.com and create an API token using
+the **Edit Cloudflare Workers** template. Find the Account ID on the Workers &
+Pages overview page. Add these GitHub Actions secrets to the repository:
+
+* `CLOUDFLARE_API_TOKEN`
+* `CLOUDFLARE_ACCOUNT_ID`
+* `XMR_WALLET`
+
+The `Deploy to Cloudflare` workflow builds the site and deploys it on every
+push to `main`, or from the Actions tab with **Run workflow**. The first
+deploy makes the site available at
+`https://mine-site.<subdomain>.workers.dev`.
+
+For a local deployment, authenticate with Wrangler and deploy with:
+
+```sh
+npx wrangler login
+wrangler secret put XMR_WALLET
+XMR_WALLET=44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A npm run cf:deploy
+```
 
 ## Verifying RandomX
 

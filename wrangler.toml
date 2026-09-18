@@ -1,0 +1,12 @@
+name = "mine-site"
+main = "cf/worker.mjs"
+compatibility_date = "2026-04-08"
+
+[assets]
+directory = "web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[vars]
+POOL_HOST = "pool.supportxmr.com"
+POOL_PORT = "3333"

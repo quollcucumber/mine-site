@@ -33,6 +33,13 @@ Environment variables:
 * `XMR_WALLET` — wallet address; required to enable mining
 * `PORT` — HTTP port (default `8080`)
 
+## Deploying to Render
+
+`render.yaml` defines a free-tier Node web service. In the Render dashboard choose
+**New → Blueprint**, pick this repo, and set `XMR_WALLET` when prompted. Render
+builds with `npm install && npm run build` and runs `npm start`; WebSockets work
+out of the box. Note the free tier sleeps after 15 minutes without traffic.
+
 ## Verifying RandomX
 
 Verify the known RandomX test vector with:

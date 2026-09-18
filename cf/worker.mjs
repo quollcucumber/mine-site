@@ -98,7 +98,7 @@ async function handleWebSocket(request, env) {
       try {
         const message = JSON.parse(event.data);
         if (message?.type === "progress") {
-          progressThreads = Math.max(1, Math.min(4, Number(message.threads) || progressThreads));
+          progressThreads = Math.max(1, Math.min(16, Number(message.threads) || progressThreads));
           const now = Date.now();
           const reported = clampReportedHashes(message.hashes, progressThreads, now - lastProgressAt);
           lastProgressAt = now;

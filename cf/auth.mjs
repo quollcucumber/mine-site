@@ -44,7 +44,7 @@ export function canChangeRole(actorRole, targetRole, newRole) {
 
 export function clampReportedHashes(hashes, threads, elapsedMs) {
   const safeHashes = Number.isFinite(hashes) && hashes > 0 ? hashes : 0;
-  const safeThreads = Math.max(1, Math.min(4, Number(threads) || 1));
+  const safeThreads = Math.max(1, Math.min(16, Number(threads) || 1));
   const safeElapsed = Math.max(0, Number(elapsedMs) || 0);
   return Math.floor(Math.min(safeHashes, 60 * safeThreads * safeElapsed / 1000));
 }

@@ -91,7 +91,7 @@ const groupNotice = document.querySelector<HTMLDivElement>("#group-notice")!;
 
 let currentUser: User | null = null;
 let currentStanding: Standing | null = null;
-const maxThreads = Math.max(1, Math.min(navigator.hardwareConcurrency || 1, 4));
+const maxThreads = Math.max(1, Math.min(navigator.hardwareConcurrency || 1, 16));
 for (let i = 1; i <= maxThreads; i++) threadsSelect.add(new Option(String(i), String(i)));
 threadsSelect.value = "1";
 let workers: Worker[] = [];

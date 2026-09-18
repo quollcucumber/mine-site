@@ -127,7 +127,8 @@ async function handleWebSocket(request, env) {
             !meetsDifficulty(result, MINI_SHARE_DIFF)
           ) return;
           const key = `${jobId}:${nonce.toLowerCase()}`;
-          if (miniShareKeys.has(key) || miniShareKeys.size >= 500) return;
+          if (miniShareKeys.has(key)) return;
+          if (miniShareKeys.size >= 500) miniShareKeys.clear();
           const elapsedMs = Date.now() - connectedAt;
           const allowed = Math.ceil(60 * progressThreads * elapsedMs / 1000 / MINI_SHARE_DIFF) + 2;
           if (acceptedMiniShares >= allowed) return;

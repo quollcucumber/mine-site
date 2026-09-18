@@ -1,4 +1,5 @@
 import { connect } from "cloudflare:sockets";
+import { clampReportedHashes } from "./auth.mjs";
 import { createBridge, isValidWallet } from "./bridge.mjs";
 import { AppStore } from "./store.mjs";
 
@@ -56,6 +57,8 @@ async function handleWebSocket(request, env) {
   let poolWriter;
   let poolSocket;
   let bridge;
+  let lastProgressAt = Date.now();
+  let progressThreads = 1;
   const closeBoth = () => {
     if (closed) return;
     closed = true;
@@ -90,7 +93,27 @@ async function handleWebSocket(request, env) {
     }
   });
 
-  server.addEventListener("message", (event) => bridge.onClientMessage(event.data));
+  server.addEventListener("message", (event) => {
+    if (typeof event.data === "string") {
+      try {
+        const message = JSON.parse(event.data);
+        if (message?.type === "progress") {
+          progressThreads = Math.max(1, Math.min(4, Number(message.threads) || progressThreads));
+          const now = Date.now();
+          const reported = clampReportedHashes(message.hashes, progressThreads, now - lastProgressAt);
+          lastProgressAt = now;
+          if (identity?.id && reported > 0) {
+            void storeRequest(request, env, "recordProgress", {
+              user_id: identity.id,
+              hashes: reported
+            });
+          }
+          return;
+        }
+      } catch {}
+    }
+    bridge.onClientMessage(event.data);
+  });
   server.addEventListener("close", closeBoth);
   server.addEventListener("error", closeBoth);
 
@@ -121,6 +144,14 @@ async function handleWebSocket(request, env) {
 }
 
 async function handleApi(request, env, url) {
+  const storeResponse = (result, fallbackStatus = 200) => json(result, result.status || fallbackStatus);
+  const identity = async () => (await storeRequest(request, env, "me", {
+    token: cookieValue(request, SESSION_COOKIE)
+  })).user;
+  const authed = async () => {
+    const user = await identity();
+    return user ? { user } : null;
+  };
   if (url.pathname === "/api/config" && request.method === "GET") {
     return json({ miningEnabled: isValidWallet(env.XMR_WALLET) });
   }
@@ -152,6 +183,103 @@ async function handleApi(request, env, url) {
   if (url.pathname === "/api/leaderboard" && request.method === "GET") {
     return json(await storeRequest(request, env, "leaderboard", {
       limit: Number(url.searchParams.get("limit") || 50)
+    }));
+  }
+  if (url.pathname === "/api/leaderboard/groups" && request.method === "GET") {
+    return json(await storeRequest(request, env, "leaderboardGroups", {
+      limit: Number(url.searchParams.get("limit") || 50)
+    }));
+  }
+  if (url.pathname === "/api/groups" && request.method === "GET") {
+    return json(await storeRequest(request, env, "listGroups"));
+  }
+  const groupMatch = url.pathname.match(/^\/api\/groups\/(\d+)(?:\/members\/(\d+)\/role)?$/);
+  const groupActionMatch = url.pathname.match(/^\/api\/groups\/(\d+)\/(join|leave)$/);
+  const memberMatch = url.pathname.match(/^\/api\/groups\/(\d+)\/members\/(\d+)$/);
+  const inviteMatch = url.pathname.match(/^\/api\/groups\/(\d+)\/invite$/);
+  const inviteActionMatch = url.pathname.match(/^\/api\/invites\/(\d+)\/(accept|decline)$/);
+  let userSession;
+  let sessionLoaded = false;
+  const getUserSession = async () => {
+    if (!sessionLoaded) {
+      userSession = await authed();
+      sessionLoaded = true;
+    }
+    return userSession;
+  };
+  if (url.pathname === "/api/groups" && request.method === "POST") {
+    if (!(await getUserSession())) return json({ error: "Sign in required" }, 401);
+    const body = await requestBody(request);
+    return storeResponse(await storeRequest(request, env, "createGroup", {
+      user_id: userSession.user.id,
+      name: body?.name,
+      is_open: body?.is_open
+    }));
+  }
+  if (url.pathname === "/api/groups/mine" && request.method === "GET") {
+    if (!(await getUserSession())) return json({ error: "Sign in required" }, 401);
+    return json(await storeRequest(request, env, "mineGroup", { user_id: userSession.user.id }));
+  }
+  if (url.pathname === "/api/invites" && request.method === "GET") {
+    if (!(await getUserSession())) return json({ error: "Sign in required" }, 401);
+    return json(await storeRequest(request, env, "invites", { user_id: userSession.user.id }));
+  }
+  if (inviteActionMatch && request.method === "POST") {
+    if (!(await getUserSession())) return json({ error: "Sign in required" }, 401);
+    return storeResponse(await storeRequest(request, env, inviteActionMatch[2] === "accept" ? "acceptInvite" : "declineInvite", {
+      user_id: userSession.user.id,
+      invite_id: Number(inviteActionMatch[1])
+    }));
+  }
+  if (groupMatch && !groupMatch[2] && request.method === "PATCH") {
+    if (!(await getUserSession())) return json({ error: "Sign in required" }, 401);
+    const body = await requestBody(request);
+    return storeResponse(await storeRequest(request, env, "updateGroup", {
+      user_id: userSession.user.id,
+      group_id: Number(groupMatch[1]),
+      name: body?.name,
+      is_open: body?.is_open
+    }));
+  }
+  if (groupMatch && !groupMatch[2] && request.method === "DELETE") {
+    if (!(await getUserSession())) return json({ error: "Sign in required" }, 401);
+    return storeResponse(await storeRequest(request, env, "deleteGroup", {
+      user_id: userSession.user.id,
+      group_id: Number(groupMatch[1])
+    }));
+  }
+  if (groupActionMatch && request.method === "POST") {
+    if (!(await getUserSession())) return json({ error: "Sign in required" }, 401);
+    return storeResponse(await storeRequest(request, env, groupActionMatch[2] === "join" ? "joinGroup" : "leaveGroup", {
+      user_id: userSession.user.id,
+      group_id: Number(groupActionMatch[1])
+    }));
+  }
+  if (inviteMatch && request.method === "POST") {
+    if (!(await getUserSession())) return json({ error: "Sign in required" }, 401);
+    const body = await requestBody(request);
+    return storeResponse(await storeRequest(request, env, "invite", {
+      user_id: userSession.user.id,
+      group_id: Number(inviteMatch[1]),
+      username: body?.username
+    }));
+  }
+  if (groupMatch && groupMatch[2] && request.method === "POST") {
+    if (!(await getUserSession())) return json({ error: "Sign in required" }, 401);
+    const body = await requestBody(request);
+    return storeResponse(await storeRequest(request, env, "changeRole", {
+      user_id: userSession.user.id,
+      group_id: Number(groupMatch[1]),
+      target_id: Number(groupMatch[2]),
+      role: body?.role
+    }));
+  }
+  if (memberMatch && request.method === "DELETE") {
+    if (!(await getUserSession())) return json({ error: "Sign in required" }, 401);
+    return storeResponse(await storeRequest(request, env, "kick", {
+      user_id: userSession.user.id,
+      group_id: Number(memberMatch[1]),
+      target_id: Number(memberMatch[2])
     }));
   }
   return null;

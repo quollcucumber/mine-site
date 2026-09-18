@@ -26,6 +26,29 @@ export function validatePassword(password) {
   return typeof password === "string" && password.length >= 8;
 }
 
+export function validateGroupName(name) {
+  return typeof name === "string" &&
+    name.trim() === name &&
+    /^[A-Za-z0-9 _-]{3,24}$/.test(name);
+}
+
+export function canKick(actorRole, targetRole) {
+  return actorRole === "owner" ? targetRole !== "owner" : actorRole === "admin" && targetRole === "member";
+}
+
+export function canChangeRole(actorRole, targetRole, newRole) {
+  if (actorRole !== "owner" || !["admin", "member", "owner"].includes(newRole)) return false;
+  if (newRole === "owner") return targetRole !== "owner";
+  return targetRole !== "owner";
+}
+
+export function clampReportedHashes(hashes, threads, elapsedMs) {
+  const safeHashes = Number.isFinite(hashes) && hashes > 0 ? hashes : 0;
+  const safeThreads = Math.max(1, Math.min(4, Number(threads) || 1));
+  const safeElapsed = Math.max(0, Number(elapsedMs) || 0);
+  return Math.floor(Math.min(safeHashes, 60 * safeThreads * safeElapsed / 1000));
+}
+
 export async function hashPassword(password, salt = null) {
   const saltBytes = salt ? base64ToBytes(salt) : crypto.getRandomValues(new Uint8Array(SALT_BYTES));
   const key = await crypto.subtle.importKey("raw", textEncoder.encode(password), "PBKDF2", false, ["deriveBits"]);

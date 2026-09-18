@@ -24,23 +24,27 @@ npm run dev
 
 The local Cloudflare Worker listens on `http://localhost:8787`. Mining is
 anonymous by default, while signed-in users receive leaderboard credit for
-pool-verified shares.
+pool-verified shares and a capped live score from reported browser work.
 
 Environment variables:
 
-* `POOL_HOST` — Stratum host (default `pool.supportxmr.com`)
+* `POOL_HOST` — Stratum host (default `pool.hashvault.pro`; SupportXMR remains a configurable alternative)
 * `POOL_PORT` — Stratum TCP port (default `3333`)
 * `XMR_WALLET` — wallet address; required to enable mining
-* `POOL_FIXED_DIFF` — optional fixed pool difficulty login suffix (default `5000`)
+* `POOL_FIXED_DIFF` — optional fixed pool difficulty login suffix (default `20000`; HashVault honours this with a minimum of 20000)
 
 ## Accounts and leaderboard
 
 Create an account or sign in from the header. Anonymous mining remains
-available, but only signed-in miners are credited. The leaderboard counts
-pool-verified shares multiplied by the difficulty of each accepted share; the
-browser hashrate is only a local measurement. Passwords are hashed with
+available, but only signed-in miners are credited. Verified work counts
+pool-verified shares multiplied by the difficulty of each accepted share.
+Reported hashes are an unverified, capped live score and never replace pool
+verification. Passwords are hashed with
 PBKDF2-SHA256 in a SQLite-backed Durable Object, and session cookies are
 HttpOnly, Secure, and expire after 30 days.
+
+Mining payouts use the configured HashVault wallet. Check your payout and
+statistics on your wallet page on `monero.hashvault.pro`.
 
 ## Deploying to Cloudflare Workers (free, no card)
 

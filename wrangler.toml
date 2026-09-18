@@ -9,9 +9,9 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 
 [vars]
-POOL_HOST = "pool.supportxmr.com"
+POOL_HOST = "pool.hashvault.pro"
 POOL_PORT = "3333"
-POOL_FIXED_DIFF = "5000"
+POOL_FIXED_DIFF = "20000"
 
 [[durable_objects.bindings]]
 name = "STORE"

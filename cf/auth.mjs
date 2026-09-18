@@ -49,6 +49,12 @@ export function clampReportedHashes(hashes, threads, elapsedMs) {
   return Math.floor(Math.min(safeHashes, 60 * safeThreads * safeElapsed / 1000));
 }
 
+export function computePoints(reportedHashes, shares) {
+  const safeReportedHashes = Number.isFinite(Number(reportedHashes)) ? Math.max(0, Math.floor(Number(reportedHashes))) : 0;
+  const safeShares = Number.isFinite(Number(shares)) ? Math.max(0, Math.floor(Number(shares))) : 0;
+  return safeReportedHashes + 20_000 * safeShares;
+}
+
 export async function hashPassword(password, salt = null) {
   const saltBytes = salt ? base64ToBytes(salt) : crypto.getRandomValues(new Uint8Array(SALT_BYTES));
   const key = await crypto.subtle.importKey("raw", textEncoder.encode(password), "PBKDF2", false, ["deriveBits"]);

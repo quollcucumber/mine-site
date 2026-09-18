@@ -188,15 +188,21 @@ export class AppStore {
     const player = this.ctx.storage.sql.exec(
       `WITH player_scores AS (
          SELECT u.id AS user_id,
+                u.username,
+                COALESCE(s.shares, 0) AS shares,
                 COALESCE(s.verified_hashes, 0) AS verified_hashes,
-                COALESCE(s.reported_hashes, 0) AS reported_hashes
+                COALESCE(s.reported_hashes, 0) AS reported_hashes,
+                COALESCE(s.reported_hashes, 0) + 20000 * COALESCE(s.shares, 0) AS points
          FROM users u LEFT JOIN stats s ON s.user_id = u.id
        )
-       SELECT ps.verified_hashes,
+       SELECT ps.points, ps.shares, ps.verified_hashes, ps.reported_hashes,
               (SELECT COUNT(*) FROM player_scores higher
-               WHERE higher.verified_hashes > ps.verified_hashes
-                  OR (higher.verified_hashes = ps.verified_hashes
-                      AND higher.reported_hashes > ps.reported_hashes)) + 1 AS rank,
+               WHERE higher.points > ps.points
+                  OR (higher.points = ps.points
+                      AND higher.shares > ps.shares)
+                  OR (higher.points = ps.points
+                      AND higher.shares = ps.shares
+                      AND higher.username COLLATE NOCASE < ps.username COLLATE NOCASE)) + 1 AS rank,
               (SELECT COUNT(*) FROM player_scores) AS player_count
        FROM player_scores ps
        WHERE ps.user_id = ?`,
@@ -205,18 +211,21 @@ export class AppStore {
     const group = this.ctx.storage.sql.exec(
       `WITH group_scores AS (
          SELECT g.id, g.name,
-                COALESCE(SUM(s.verified_hashes), 0) AS verified_hashes,
-                COALESCE(SUM(s.reported_hashes), 0) AS reported_hashes
+                COALESCE(SUM(COALESCE(s.shares, 0)), 0) AS shares,
+                COALESCE(SUM(COALESCE(s.reported_hashes, 0) + 20000 * COALESCE(s.shares, 0)), 0) AS points
          FROM groups g
          LEFT JOIN group_members gm ON gm.group_id = g.id
          LEFT JOIN stats s ON s.user_id = gm.user_id
          GROUP BY g.id
        )
        SELECT gs.id, gs.name,
-              (SELECT COUNT(*) FROM group_scores higher
-               WHERE higher.verified_hashes > gs.verified_hashes
-                  OR (higher.verified_hashes = gs.verified_hashes
-                      AND higher.reported_hashes > gs.reported_hashes)) + 1 AS rank
+               (SELECT COUNT(*) FROM group_scores higher
+               WHERE higher.points > gs.points
+                  OR (higher.points = gs.points
+                      AND higher.shares > gs.shares)
+                  OR (higher.points = gs.points
+                      AND higher.shares = gs.shares
+                      AND higher.name COLLATE NOCASE < gs.name COLLATE NOCASE)) + 1 AS rank
        FROM group_scores gs
        JOIN group_members gm ON gm.group_id = gs.id
        WHERE gm.user_id = ?`,
@@ -226,7 +235,8 @@ export class AppStore {
       user: session.user,
       verified_hashes: player?.verified_hashes || 0,
       reported_hashes: player?.reported_hashes || 0,
-      points: Math.floor((player?.verified_hashes || 0) / 100),
+      shares: player?.shares || 0,
+      points: player?.points || 0,
       rank: player?.rank || null,
       player_count: player?.player_count || 0,
       group: group ? { id: group.id, name: group.name, rank: group.rank } : null
@@ -265,11 +275,12 @@ export class AppStore {
       `SELECT u.username, COALESCE(s.shares, 0) AS shares,
               COALESCE(s.verified_hashes, 0) AS verified_hashes,
               COALESCE(s.reported_hashes, 0) AS reported_hashes,
+              COALESCE(s.reported_hashes, 0) + 20000 * COALESCE(s.shares, 0) AS points,
               g.name AS group_name
        FROM users u LEFT JOIN stats s ON s.user_id = u.id
        LEFT JOIN group_members gm ON gm.user_id = u.id
        LEFT JOIN groups g ON g.id = gm.group_id
-       ORDER BY verified_hashes DESC, reported_hashes DESC, shares DESC, u.username COLLATE NOCASE ASC
+       ORDER BY points DESC, shares DESC, u.username COLLATE NOCASE ASC
        LIMIT ?`,
       bounded
     ).toArray();
@@ -277,6 +288,7 @@ export class AppStore {
       leaderboard: rows.map((row, index) => ({
         rank: index + 1,
         username: row.username,
+        points: row.points,
         shares: row.shares,
         verified_hashes: row.verified_hashes,
         reported_hashes: row.reported_hashes,
@@ -289,12 +301,12 @@ export class AppStore {
     const bounded = Math.max(1, Math.min(50, Number(limit) || 50));
     const rows = this.ctx.storage.sql.exec(
       `SELECT g.name, COUNT(gm.user_id) AS member_count,
-              COALESCE(SUM(s.verified_hashes), 0) AS verified_hashes,
-              COALESCE(SUM(s.reported_hashes), 0) AS reported_hashes
+              COALESCE(SUM(COALESCE(s.shares, 0)), 0) AS shares,
+              COALESCE(SUM(COALESCE(s.reported_hashes, 0) + 20000 * COALESCE(s.shares, 0)), 0) AS points
        FROM groups g LEFT JOIN group_members gm ON gm.group_id = g.id
        LEFT JOIN stats s ON s.user_id = gm.user_id
        GROUP BY g.id
-       ORDER BY verified_hashes DESC, reported_hashes DESC, g.name COLLATE NOCASE ASC
+       ORDER BY points DESC, shares DESC, g.name COLLATE NOCASE ASC
        LIMIT ?`,
       bounded
     ).toArray();
@@ -357,8 +369,8 @@ export class AppStore {
     if (!membership) return { group: null, members: [], my_role: null };
     const members = this.ctx.storage.sql.exec(
       `SELECT u.id AS user_id, u.username, gm.role,
-              COALESCE(s.verified_hashes, 0) AS verified_hashes,
-              COALESCE(s.reported_hashes, 0) AS reported_hashes
+              COALESCE(s.shares, 0) AS shares,
+              COALESCE(s.reported_hashes, 0) + 20000 * COALESCE(s.shares, 0) AS points
        FROM group_members gm JOIN users u ON u.id = gm.user_id
        LEFT JOIN stats s ON s.user_id = gm.user_id
        WHERE gm.group_id = ?

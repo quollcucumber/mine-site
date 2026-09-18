@@ -36,10 +36,11 @@ Environment variables:
 ## Accounts and leaderboard
 
 Create an account or sign in from the header. Anonymous mining remains
-available, but only signed-in miners are credited. Verified work counts
-pool-verified shares multiplied by the difficulty of each accepted share.
-Reported hashes are an unverified, capped live score and never replace pool
-verification. Passwords are hashed with
+available, but only signed-in miners are credited. The server is the source of
+truth: points equal reported hashes while signed in plus 20,000 points for
+each pool-verified share. Reported progress remains capped and unverified
+until a share is accepted; pool verification adds the share bonus without
+replacing the live score. Passwords are hashed with
 PBKDF2-SHA256 in a SQLite-backed Durable Object, and session cookies are
 HttpOnly, Secure, and expire after 30 days.
 

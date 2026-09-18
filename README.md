@@ -24,7 +24,8 @@ npm run dev
 
 The local Cloudflare Worker listens on `http://localhost:8787`. Mining is
 anonymous by default, while signed-in users receive leaderboard credit for
-pool-verified shares and a capped live score from reported browser work.
+mini-shares and pool-verified shares. Reported browser work is capped and
+recorded for live progress only.
 
 Environment variables:
 
@@ -37,10 +38,9 @@ Environment variables:
 
 Create an account or sign in from the header. Anonymous mining remains
 available, but only signed-in miners are credited. The server is the source of
-truth: points equal reported hashes while signed in plus 20,000 points for
-each pool-verified share. Reported progress remains capped and unverified
-until a share is accepted; pool verification adds the share bonus without
-replacing the live score. Passwords are hashed with
+truth: every hash that beats difficulty 512 is a mini-share worth 512 points,
+and each pool-verified share adds 20,000 points. Reported progress remains
+recorded for live status but does not score. Passwords are hashed with
 PBKDF2-SHA256 in a SQLite-backed Durable Object, and session cookies are
 HttpOnly, Secure, and expire after 30 days.
 

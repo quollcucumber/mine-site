@@ -43,6 +43,7 @@ export class AppStore {
       CREATE TABLE IF NOT EXISTS stats (
         user_id INTEGER PRIMARY KEY,
         shares INTEGER NOT NULL DEFAULT 0,
+        mini_shares INTEGER NOT NULL DEFAULT 0,
         verified_hashes INTEGER NOT NULL DEFAULT 0,
         reported_hashes INTEGER NOT NULL DEFAULT 0,
         last_share_at INTEGER
@@ -74,6 +75,9 @@ export class AppStore {
     try {
       this.ctx.storage.sql.exec("ALTER TABLE stats ADD COLUMN reported_hashes INTEGER NOT NULL DEFAULT 0");
     } catch {}
+    try {
+      this.ctx.storage.sql.exec("ALTER TABLE stats ADD COLUMN mini_shares INTEGER NOT NULL DEFAULT 0");
+    } catch {}
   }
 
   limited(ip) {
@@ -98,6 +102,7 @@ export class AppStore {
     if (method === "logout") return this.logout(params);
     if (method === "me") return this.me(params);
     if (method === "recordShare") return this.recordShare(params);
+    if (method === "recordMiniShare") return this.recordMiniShare(params);
     if (method === "recordProgress") return this.recordProgress(params);
     if (method === "leaderboard") return this.leaderboard(params);
     if (method === "leaderboardGroups") return this.leaderboardGroups(params);
@@ -184,18 +189,19 @@ export class AppStore {
 
   async me({ token }) {
     const session = await this.session(token);
-    if (!session) return { user: null, points: 0, rank: null, player_count: 0, group: null };
+    if (!session) return { user: null, points: 0, mini_shares: 0, rank: null, player_count: 0, group: null };
     const player = this.ctx.storage.sql.exec(
       `WITH player_scores AS (
          SELECT u.id AS user_id,
                 u.username,
+                COALESCE(s.mini_shares, 0) AS mini_shares,
                 COALESCE(s.shares, 0) AS shares,
                 COALESCE(s.verified_hashes, 0) AS verified_hashes,
                 COALESCE(s.reported_hashes, 0) AS reported_hashes,
-                COALESCE(s.reported_hashes, 0) + 20000 * COALESCE(s.shares, 0) AS points
+                512 * COALESCE(s.mini_shares, 0) + 20000 * COALESCE(s.shares, 0) AS points
          FROM users u LEFT JOIN stats s ON s.user_id = u.id
        )
-       SELECT ps.points, ps.shares, ps.verified_hashes, ps.reported_hashes,
+       SELECT ps.points, ps.mini_shares, ps.shares, ps.verified_hashes, ps.reported_hashes,
               (SELECT COUNT(*) FROM player_scores higher
                WHERE higher.points > ps.points
                   OR (higher.points = ps.points
@@ -211,8 +217,9 @@ export class AppStore {
     const group = this.ctx.storage.sql.exec(
       `WITH group_scores AS (
          SELECT g.id, g.name,
+                COALESCE(SUM(COALESCE(s.mini_shares, 0)), 0) AS mini_shares,
                 COALESCE(SUM(COALESCE(s.shares, 0)), 0) AS shares,
-                COALESCE(SUM(COALESCE(s.reported_hashes, 0) + 20000 * COALESCE(s.shares, 0)), 0) AS points
+                COALESCE(SUM(512 * COALESCE(s.mini_shares, 0) + 20000 * COALESCE(s.shares, 0)), 0) AS points
          FROM groups g
          LEFT JOIN group_members gm ON gm.group_id = g.id
          LEFT JOIN stats s ON s.user_id = gm.user_id
@@ -235,6 +242,7 @@ export class AppStore {
       user: session.user,
       verified_hashes: player?.verified_hashes || 0,
       reported_hashes: player?.reported_hashes || 0,
+      mini_shares: player?.mini_shares || 0,
       shares: player?.shares || 0,
       points: player?.points || 0,
       rank: player?.rank || null,
@@ -258,6 +266,17 @@ export class AppStore {
     return { ok: true };
   }
 
+  recordMiniShare({ user_id: userId }) {
+    if (!Number.isInteger(userId)) return fail("Invalid mini-share");
+    this.ctx.storage.sql.exec(
+      `INSERT INTO stats (user_id, mini_shares, shares, verified_hashes, reported_hashes, last_share_at)
+       VALUES (?, 1, 0, 0, 0, NULL)
+       ON CONFLICT(user_id) DO UPDATE SET mini_shares = mini_shares + 1`,
+      userId
+    );
+    return { ok: true };
+  }
+
   recordProgress({ user_id: userId, hashes }) {
     if (!Number.isInteger(userId) || !Number.isFinite(hashes) || hashes < 0) return fail("Invalid progress");
     this.ctx.storage.sql.exec(
@@ -272,10 +291,11 @@ export class AppStore {
   leaderboard({ limit = 50 }) {
     const bounded = Math.max(1, Math.min(50, Number(limit) || 50));
     const rows = this.ctx.storage.sql.exec(
-      `SELECT u.username, COALESCE(s.shares, 0) AS shares,
+      `SELECT u.username, COALESCE(s.mini_shares, 0) AS mini_shares,
+              COALESCE(s.shares, 0) AS shares,
               COALESCE(s.verified_hashes, 0) AS verified_hashes,
               COALESCE(s.reported_hashes, 0) AS reported_hashes,
-              COALESCE(s.reported_hashes, 0) + 20000 * COALESCE(s.shares, 0) AS points,
+              512 * COALESCE(s.mini_shares, 0) + 20000 * COALESCE(s.shares, 0) AS points,
               g.name AS group_name
        FROM users u LEFT JOIN stats s ON s.user_id = u.id
        LEFT JOIN group_members gm ON gm.user_id = u.id
@@ -289,6 +309,7 @@ export class AppStore {
         rank: index + 1,
         username: row.username,
         points: row.points,
+        mini_shares: row.mini_shares,
         shares: row.shares,
         verified_hashes: row.verified_hashes,
         reported_hashes: row.reported_hashes,
@@ -301,8 +322,9 @@ export class AppStore {
     const bounded = Math.max(1, Math.min(50, Number(limit) || 50));
     const rows = this.ctx.storage.sql.exec(
       `SELECT g.name, COUNT(gm.user_id) AS member_count,
+              COALESCE(SUM(COALESCE(s.mini_shares, 0)), 0) AS mini_shares,
               COALESCE(SUM(COALESCE(s.shares, 0)), 0) AS shares,
-              COALESCE(SUM(COALESCE(s.reported_hashes, 0) + 20000 * COALESCE(s.shares, 0)), 0) AS points
+              COALESCE(SUM(512 * COALESCE(s.mini_shares, 0) + 20000 * COALESCE(s.shares, 0)), 0) AS points
        FROM groups g LEFT JOIN group_members gm ON gm.group_id = g.id
        LEFT JOIN stats s ON s.user_id = gm.user_id
        GROUP BY g.id
@@ -369,8 +391,9 @@ export class AppStore {
     if (!membership) return { group: null, members: [], my_role: null };
     const members = this.ctx.storage.sql.exec(
       `SELECT u.id AS user_id, u.username, gm.role,
+              COALESCE(s.mini_shares, 0) AS mini_shares,
               COALESCE(s.shares, 0) AS shares,
-              COALESCE(s.reported_hashes, 0) + 20000 * COALESCE(s.shares, 0) AS points
+              512 * COALESCE(s.mini_shares, 0) + 20000 * COALESCE(s.shares, 0) AS points
        FROM group_members gm JOIN users u ON u.id = gm.user_id
        LEFT JOIN stats s ON s.user_id = gm.user_id
        WHERE gm.group_id = ?

@@ -171,5 +171,13 @@ export function createBridge({
     }
   };
 
-  return { onPoolConnect, onPoolData, onPoolClose, onPoolError, onClientMessage, close };
+  return {
+    onPoolConnect,
+    onPoolData,
+    onPoolClose,
+    onPoolError,
+    onClientMessage,
+    hasJob: (jobId) => currentJobs.has(jobId),
+    close
+  };
 }

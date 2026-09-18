@@ -8,6 +8,7 @@ type Job = {
 
 type WorkerMessage = { type: "job"; job: Job } | { type: "stop" };
 type Share = { type: "share"; job_id: string; nonce: string; result: string };
+type MiniShare = { type: "minishare"; job_id: string; nonce: string; result: string };
 type Progress = { type: "progress"; hashes: number };
 type Status = { type: "status"; status: string };
 
@@ -47,6 +48,12 @@ function hashMeetsTarget(hash: Uint8Array, target: string): boolean {
     return actual <= limit;
   }
   return false;
+}
+
+function hashMeetsDifficulty(hash: Uint8Array, difficulty: number): boolean {
+  let value = 0;
+  for (let index = 0; index < 4; index++) value += hash[28 + index] * (2 ** (index * 8));
+  return value <= Math.floor(2 ** 32 / difficulty);
 }
 
 async function init() {
@@ -121,6 +128,10 @@ async function loop() {
       if (hashMeetsTarget(hash, currentJob.target)) {
         const nonceHex = Array.from(input.slice(39, 43), (byte) => byte.toString(16).padStart(2, "0")).join("");
         postMessage({ type: "share", job_id: currentJob.job_id, nonce: nonceHex, result } satisfies Share);
+      }
+      if (hashMeetsDifficulty(hash, 512)) {
+        const nonceHex = Array.from(input.slice(39, 43), (byte) => byte.toString(16).padStart(2, "0")).join("");
+        postMessage({ type: "minishare", job_id: currentJob.job_id, nonce: nonceHex, result } satisfies MiniShare);
       }
       nonceValue = (nonceValue + 1) >>> 0;
     }

@@ -5,6 +5,8 @@ import {
   clampReportedHashes,
   computePoints,
   hashPassword,
+  meetsDifficulty,
+  MINI_SHARE_DIFF,
   targetToDifficulty,
   validateGroupName,
   validateUsername,
@@ -23,9 +25,11 @@ assert.equal(canChangeRole("admin", "member", "admin"), false);
 assert.equal(clampReportedHashes(10000, 4, 1000), 240);
 assert.equal(clampReportedHashes(10000, 8, 1000), 480);
 assert.equal(clampReportedHashes(10000, 4, 0), 0);
-assert.equal(computePoints(1234, 2), 41234);
+assert.equal(computePoints(3, 2), 41536);
 assert.equal(computePoints(-10, 3), 60000);
 assert.equal(computePoints("bad", 1), 20000);
+assert.equal(meetsDifficulty(`${"00".repeat(28)}00008000`, MINI_SHARE_DIFF), true);
+assert.equal(meetsDifficulty(`${"00".repeat(28)}01008000`, MINI_SHARE_DIFF), false);
 assert.equal(targetToDifficulty("b2df0000"), 75000);
 assert.equal(targetToDifficulty("ffffffffffffffff"), 1);
 

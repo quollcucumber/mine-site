@@ -1,5 +1,5 @@
 import { connect } from "cloudflare:sockets";
-import { clampReportedHashes } from "./auth.mjs";
+import { clampReportedHashes, meetsDifficulty, MINI_SHARE_DIFF, MINI_SHARE_POINTS } from "./auth.mjs";
 import { createBridge, isValidWallet } from "./bridge.mjs";
 import { AppStore } from "./store.mjs";
 
@@ -59,6 +59,9 @@ async function handleWebSocket(request, env) {
   let bridge;
   let lastProgressAt = Date.now();
   let progressThreads = 1;
+  const connectedAt = Date.now();
+  const miniShareKeys = new Set();
+  let acceptedMiniShares = 0;
   const closeBoth = () => {
     if (closed) return;
     closed = true;
@@ -108,6 +111,32 @@ async function handleWebSocket(request, env) {
               hashes: reported
             });
           }
+          return;
+        }
+        if (message?.type === "minishare") {
+          const jobId = message.job_id;
+          const nonce = message.nonce;
+          const result = message.result;
+          if (
+            typeof jobId !== "string" ||
+            !bridge.hasJob(jobId) ||
+            typeof nonce !== "string" ||
+            !/^[0-9a-f]{8}$/i.test(nonce) ||
+            typeof result !== "string" ||
+            !/^[0-9a-f]{64}$/i.test(result) ||
+            !meetsDifficulty(result, MINI_SHARE_DIFF)
+          ) return;
+          const key = `${jobId}:${nonce.toLowerCase()}`;
+          if (miniShareKeys.has(key) || miniShareKeys.size >= 500) return;
+          const elapsedMs = Date.now() - connectedAt;
+          const allowed = Math.ceil(60 * progressThreads * elapsedMs / 1000 / MINI_SHARE_DIFF) + 2;
+          if (acceptedMiniShares >= allowed) return;
+          miniShareKeys.add(key);
+          acceptedMiniShares++;
+          if (identity?.id) {
+            void storeRequest(request, env, "recordMiniShare", { user_id: identity.id });
+          }
+          if (!closed) server.send(JSON.stringify({ type: "minishare_ok", points: MINI_SHARE_POINTS }));
           return;
         }
       } catch {}

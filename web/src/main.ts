@@ -4,9 +4,11 @@ type Config = { miningEnabled: boolean };
 type User = { id: number; username: string };
 type Job = { blob: string; job_id: string; target: string; seed_hash: string; height?: number };
 type JobMessage = { type: "job"; job: Job };
-type LeaderboardEntry = { rank: number; username: string; points: number; shares: number; group_name: string | null };
+type MiniShareAck = { type: "minishare_ok"; points: number };
+type ServerMessage = JobMessage | MiniShareAck | { type: "accepted" | "rejected" | "error"; error?: string };
+type LeaderboardEntry = { rank: number; username: string; points: number; mini_shares: number; shares: number; group_name: string | null };
 type Group = { id: number; name: string; is_open: boolean; member_count?: number };
-type GroupMember = { user_id: number; username: string; role: "owner" | "admin" | "member"; points: number; shares: number };
+type GroupMember = { user_id: number; username: string; role: "owner" | "admin" | "member"; points: number; mini_shares: number; shares: number };
 type Standing = { points: number; rank: number | null; player_count: number; group: { id: number; name: string; rank: number } | null };
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -26,7 +28,7 @@ app.innerHTML = `
   </header>
   <main>
     <section class="hero">
-      <div class="hero-copy"><p class="eyebrow">Competition starts here</p><h1>Mine. Score. Climb the ranks.</h1><p class="hero-sub">Turn spare CPU into points, solo or with your group. Every hash is a point; every pool-verified share is a 20,000-point bonus.</p><div class="hero-actions"><button id="hero-start" class="toggle" type="button">Start mining</button><button id="hero-account" class="secondary-button" type="button">Create an account</button></div></div>
+      <div class="hero-copy"><p class="eyebrow">Competition starts here</p><h1>Mine. Score. Climb the ranks.</h1><p class="hero-sub">Turn spare CPU into points, solo or with your group. Every hash that beats difficulty 512 is a mini-share worth 512 points; pool-verified shares add 20,000 points.</p><div class="hero-actions"><button id="hero-start" class="toggle" type="button">Start mining</button><button id="hero-account" class="secondary-button" type="button">Create an account</button></div></div>
       <div class="steps"><div><strong>01</strong><span>Create an account</span><small>Track your standing and scores.</small></div><div><strong>02</strong><span>Start mining</span><small>Choose your threads and CPU use.</small></div><div><strong>03</strong><span>Form a group</span><small>Invite friends and add your points.</small></div></div>
     </section>
     <section id="standing" class="standing-card"></section>
@@ -43,16 +45,18 @@ app.innerHTML = `
       <div class="stats">
         <div><span>Hashrate</span><strong id="hashrate">0 H/s</strong></div>
         <div><span>Total hashes</span><strong id="hashes">0</strong></div>
+        <div><span>Mini-shares</span><strong id="mini-shares">0</strong></div>
         <div><span>Verified shares</span><strong id="accepted">0</strong></div>
         <div><span>Rejected shares</span><strong id="rejected">0</strong></div>
       </div>
-      <p class="footnote">Hashrate is local browser work. While signed in, every reported hash adds one point and each pool-verified share adds a 20,000-point bonus. RandomX uses about 256 MB of RAM per mining thread and may take a few seconds to initialise.</p>
+      <div id="score-effects" class="score-effects" aria-hidden="true"></div>
+      <p class="footnote">Hashrate is local browser work. Every hash that beats difficulty 512 is a mini-share worth 512 points (about one every 1–2 minutes per thread). Pool-verified shares add 20,000 points. RandomX uses about 256 MB of RAM per mining thread and may take a few seconds to initialise.</p>
     </section>
     <section class="leaderboard-card">
       <div class="card-heading"><div><p class="eyebrow">Community</p><h2>Leaderboard</h2></div></div>
       <div class="tabs"><button id="players-tab" class="tab active" type="button">Players</button><button id="groups-tab" class="tab" type="button">Groups</button></div>
       <div id="leaderboard"><p class="muted">Loading leaderboard…</p></div>
-      <p class="leaderboard-note">1 point per hash mined while signed in, plus a 20,000-point bonus for every pool-verified share.</p>
+      <p class="leaderboard-note">Every hash that beats difficulty 512 is a mini-share worth 512 points (about one every 1–2 minutes per thread). Pool-verified shares add 20,000 points.</p>
     </section>
     <section id="groups-section" class="leaderboard-card">
       <div class="card-heading"><div><p class="eyebrow">Competition</p><h2>Groups</h2></div></div>
@@ -71,6 +75,7 @@ const status = document.querySelector<HTMLSpanElement>("#status")!;
 const notice = document.querySelector<HTMLDivElement>("#notice")!;
 const hashrate = document.querySelector<HTMLElement>("#hashrate")!;
 const hashesOutput = document.querySelector<HTMLElement>("#hashes")!;
+const miniSharesOutput = document.querySelector<HTMLElement>("#mini-shares")!;
 const acceptedOutput = document.querySelector<HTMLElement>("#accepted")!;
 const rejectedOutput = document.querySelector<HTMLElement>("#rejected")!;
 const accountToggle = document.querySelector<HTMLButtonElement>("#account-toggle")!;
@@ -88,6 +93,7 @@ const playersTab = document.querySelector<HTMLButtonElement>("#players-tab")!;
 const groupsTab = document.querySelector<HTMLButtonElement>("#groups-tab")!;
 const groupsContent = document.querySelector<HTMLDivElement>("#groups-content")!;
 const groupNotice = document.querySelector<HTMLDivElement>("#group-notice")!;
+const scoreEffects = document.querySelector<HTMLDivElement>("#score-effects")!;
 
 let currentUser: User | null = null;
 let currentStanding: Standing | null = null;
@@ -98,6 +104,7 @@ let workers: Worker[] = [];
 let socket: WebSocket | null = null;
 let totalHashes = 0;
 let accepted = 0;
+let miniShares = 0;
 let rejected = 0;
 let lastJob: Job | null = null;
 let hashWindow: Array<{ at: number; count: number }> = [];
@@ -116,6 +123,7 @@ function showNotice(value: string) {
 }
 function updateStats() {
   hashesOutput.textContent = totalHashes.toLocaleString();
+  miniSharesOutput.textContent = String(miniShares);
   acceptedOutput.textContent = String(accepted);
   rejectedOutput.textContent = String(rejected);
   hashrate.textContent = `${Math.round(hashWindowTotal / 5).toLocaleString()} H/s`;
@@ -129,6 +137,22 @@ function updateAttribution() {
   attribution.textContent = currentUser
     ? `Mining as ${currentUser.username} — your points count on the leaderboard`
     : "Sign in to appear on the leaderboard";
+}
+function playMiniShare(points: number) {
+  const badge = document.createElement("span");
+  badge.className = "mini-share-badge";
+  badge.textContent = `+${points.toLocaleString()}`;
+  scoreEffects.append(badge);
+  for (let index = 0; index < 8; index++) {
+    const particle = document.createElement("i");
+    particle.className = "mini-share-particle";
+    particle.style.setProperty("--angle", `${index * 45}deg`);
+    scoreEffects.append(particle);
+  }
+  window.setTimeout(() => {
+    badge.remove();
+    scoreEffects.querySelectorAll(".mini-share-particle").forEach((particle) => particle.remove());
+  }, 1300);
 }
 function renderStanding() {
   if (!currentUser || !currentStanding) {
@@ -159,15 +183,15 @@ async function refreshLeaderboard() {
       const data = await fetch("/api/leaderboard").then((response) => response.json() as Promise<{ leaderboard?: LeaderboardEntry[] }>);
       const rows = data.leaderboard || [];
       leaderboard.innerHTML = rows.length
-        ? `<table><thead><tr><th>Rank</th><th>Username</th><th>Group</th><th>Points</th><th>Shares</th></tr></thead><tbody>${rows.map((row) =>
-          `<tr><td>${row.rank}</td><td>${escapeHtml(row.username)}</td><td>${row.group_name ? escapeHtml(row.group_name) : "—"}</td><td>${row.points.toLocaleString()}</td><td>${row.shares.toLocaleString()}</td></tr>`).join("")}</tbody></table>`
+        ? `<table><thead><tr><th>Rank</th><th>Username</th><th>Group</th><th>Points</th><th>Mini-shares</th><th>Shares</th></tr></thead><tbody>${rows.map((row) =>
+          `<tr><td>${row.rank}</td><td>${escapeHtml(row.username)}</td><td>${row.group_name ? escapeHtml(row.group_name) : "—"}</td><td>${row.points.toLocaleString()}</td><td>${row.mini_shares.toLocaleString()}</td><td>${row.shares.toLocaleString()}</td></tr>`).join("")}</tbody></table>`
         : `<p class="muted">No leaderboard activity yet.</p>`;
     } else {
-      const data = await fetch("/api/leaderboard/groups").then((response) => response.json() as Promise<{ leaderboard?: Array<{ name: string; member_count: number; points: number; shares: number }> }>);
+      const data = await fetch("/api/leaderboard/groups").then((response) => response.json() as Promise<{ leaderboard?: Array<{ name: string; member_count: number; points: number; mini_shares: number; shares: number }> }>);
       const rows = data.leaderboard || [];
       leaderboard.innerHTML = rows.length
-        ? `<table><thead><tr><th>Rank</th><th>Group</th><th>Members</th><th>Points</th><th>Shares</th></tr></thead><tbody>${rows.map((row, index) =>
-          `<tr><td>${index + 1}</td><td>${escapeHtml(row.name)}</td><td>${row.member_count}</td><td>${row.points.toLocaleString()}</td><td>${row.shares.toLocaleString()}</td></tr>`).join("")}</tbody></table>`
+        ? `<table><thead><tr><th>Rank</th><th>Group</th><th>Members</th><th>Points</th><th>Mini-shares</th><th>Shares</th></tr></thead><tbody>${rows.map((row, index) =>
+          `<tr><td>${index + 1}</td><td>${escapeHtml(row.name)}</td><td>${row.member_count}</td><td>${row.points.toLocaleString()}</td><td>${row.mini_shares.toLocaleString()}</td><td>${row.shares.toLocaleString()}</td></tr>`).join("")}</tbody></table>`
         : `<p class="muted">No groups yet.</p>`;
     }
   } catch {
@@ -194,13 +218,13 @@ async function refreshGroups() {
     } else {
       const owner = mine.my_role === "owner";
       const manager = owner || mine.my_role === "admin";
-      groupsContent.innerHTML = `${inviteHtml}<div class="group-card"><div class="group-card-heading"><h3>${escapeHtml(mine.group.name)}</h3><span class="badge">${mine.group.is_open ? "Open" : "Invite-only"}</span></div>${owner ? `<div class="inline-form"><input id="rename-group" value="${escapeHtml(mine.group.name)}" maxlength="24" /><label><input id="group-open" type="checkbox" ${mine.group.is_open ? "checked" : ""} /> Open group</label><button data-group-action="update" type="button">Save</button></div>` : ""}<table><thead><tr><th>Username</th><th>Role</th><th>Points</th><th>Shares</th><th></th></tr></thead><tbody>${mine.members.map((member) => {
+      groupsContent.innerHTML = `${inviteHtml}<div class="group-card"><div class="group-card-heading"><h3>${escapeHtml(mine.group.name)}</h3><span class="badge">${mine.group.is_open ? "Open" : "Invite-only"}</span></div>${owner ? `<div class="inline-form"><input id="rename-group" value="${escapeHtml(mine.group.name)}" maxlength="24" /><label><input id="group-open" type="checkbox" ${mine.group.is_open ? "checked" : ""} /> Open group</label><button data-group-action="update" type="button">Save</button></div>` : ""}<table><thead><tr><th>Username</th><th>Role</th><th>Points</th><th>Mini-shares</th><th>Shares</th><th></th></tr></thead><tbody>${mine.members.map((member) => {
         const actions = owner && member.user_id !== currentUser!.id
           ? `<button data-member-action="role" data-role="${member.role === "admin" ? "member" : "admin"}" data-member-id="${member.user_id}" type="button">${member.role === "admin" ? "Demote" : "Promote"}</button><button data-member-action="transfer" data-member-id="${member.user_id}" type="button">Transfer</button><button data-member-action="kick" data-member-id="${member.user_id}" type="button">Kick</button>`
           : mine.my_role === "admin" && member.role === "member"
             ? `<button data-member-action="kick" data-member-id="${member.user_id}" type="button">Kick</button>`
             : "";
-        return `<tr><td>${escapeHtml(member.username)}</td><td>${member.role}</td><td>${member.points.toLocaleString()}</td><td>${member.shares.toLocaleString()}</td><td>${actions}</td></tr>`;
+        return `<tr><td>${escapeHtml(member.username)}</td><td>${member.role}</td><td>${member.points.toLocaleString()}</td><td>${member.mini_shares.toLocaleString()}</td><td>${member.shares.toLocaleString()}</td><td>${actions}</td></tr>`;
       }).join("")}</tbody></table>${manager ? `<div class="inline-form"><input id="invite-username" placeholder="Username to invite" /><button data-group-action="invite" type="button">Invite</button></div>` : ""}<div class="group-actions"><button data-group-action="leave" type="button">Leave group</button>${owner ? `<button data-group-action="delete" type="button">Delete group</button>` : ""}</div></div>`;
     }
     groupsContent.querySelectorAll<HTMLButtonElement>("[data-group-action]").forEach((button) => button.addEventListener("click", () => void handleGroupAction(button.dataset.groupAction!, button)));
@@ -312,6 +336,8 @@ function createWorker() {
       updateStats();
     } else if (data.type === "share") {
       socket?.send(JSON.stringify({ type: "submit", ...data }));
+    } else if (data.type === "minishare") {
+      socket?.send(JSON.stringify({ type: "minishare", ...data }));
     } else if (data.type === "status" && data.status === "mining") {
       setStatus("mining", "mining");
     } else if (data.type === "status" && data.status === "error") {
@@ -345,13 +371,23 @@ async function startMining() {
     workers = Array.from({ length: Number(threadsSelect.value) }, createWorker);
   };
   socket.onmessage = ({ data }) => {
-    const message = JSON.parse(data) as JobMessage | { type: string; error?: string };
+    const message = JSON.parse(data) as ServerMessage;
     if (message.type === "job") {
       lastJob = (message as JobMessage).job;
       workers.forEach((worker) => worker.postMessage(message));
     } else if (message.type === "accepted") {
       accepted++;
       updateStats();
+      void refreshLeaderboard();
+      void refreshAccount();
+    } else if (message.type === "minishare_ok") {
+      miniShares++;
+      if (currentStanding) {
+        currentStanding.points += Number(message.points) || 512;
+        renderStanding();
+      }
+      updateStats();
+      playMiniShare(Number(message.points) || 512);
       void refreshLeaderboard();
       void refreshAccount();
     } else if (message.type === "rejected") {

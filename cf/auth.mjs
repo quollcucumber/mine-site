@@ -2,6 +2,8 @@ const textEncoder = new TextEncoder();
 const SALT_BYTES = 16;
 const HASH_BITS = 256;
 const ITERATIONS = 100_000;
+export const MINI_SHARE_DIFF = 512;
+export const MINI_SHARE_POINTS = 512;
 
 function bytesToBase64(bytes) {
   let binary = "";
@@ -49,10 +51,10 @@ export function clampReportedHashes(hashes, threads, elapsedMs) {
   return Math.floor(Math.min(safeHashes, 60 * safeThreads * safeElapsed / 1000));
 }
 
-export function computePoints(reportedHashes, shares) {
-  const safeReportedHashes = Number.isFinite(Number(reportedHashes)) ? Math.max(0, Math.floor(Number(reportedHashes))) : 0;
+export function computePoints(miniShares, shares) {
+  const safeMiniShares = Number.isFinite(Number(miniShares)) ? Math.max(0, Math.floor(Number(miniShares))) : 0;
   const safeShares = Number.isFinite(Number(shares)) ? Math.max(0, Math.floor(Number(shares))) : 0;
-  return safeReportedHashes + 20_000 * safeShares;
+  return MINI_SHARE_POINTS * safeMiniShares + 20_000 * safeShares;
 }
 
 export async function hashPassword(password, salt = null) {
@@ -93,4 +95,16 @@ export function targetToDifficulty(target) {
   const value = BigInt(`0x${bytes}`);
   if (value === 0n) return 0;
   return Number((1n << BigInt(target.length * 4)) / value);
+}
+
+export function meetsDifficulty(resultHex, difficulty) {
+  if (typeof resultHex !== "string" || !/^[0-9a-f]{64}$/i.test(resultHex)) return false;
+  const safeDifficulty = Number(difficulty);
+  if (!Number.isFinite(safeDifficulty) || safeDifficulty <= 0) return false;
+  const bytes = resultHex.match(/../g);
+  const value = bytes.slice(28, 32).reduce(
+    (total, byte, index) => total + Number.parseInt(byte, 16) * (2 ** (index * 8)),
+    0
+  );
+  return value <= Math.floor(2 ** 32 / safeDifficulty);
 }

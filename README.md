@@ -17,27 +17,30 @@ BSD-3-Clause-licensed JavaScript/WebAssembly implementation.
 
 ```sh
 npm install
-cp .env.example .env
-# Set XMR_WALLET in .env
-npm run build
-npm start
+cp .dev.vars.example .dev.vars
+# Set XMR_WALLET in .dev.vars
+npm run dev
 ```
 
-The server listens on `http://localhost:8080` by default. `npm run dev` runs
-the server and Vite development server together.
+The local Cloudflare Worker listens on `http://localhost:8787`. Mining is
+anonymous by default, while signed-in users receive leaderboard credit for
+pool-verified shares.
 
 Environment variables:
 
 * `POOL_HOST` — Stratum host (default `pool.supportxmr.com`)
 * `POOL_PORT` — Stratum TCP port (default `3333`)
 * `XMR_WALLET` — wallet address; required to enable mining
-* `PORT` — HTTP port (default `8080`)
+* `POOL_FIXED_DIFF` — optional fixed pool difficulty login suffix (default `5000`)
 
-## Deploying to Render
+## Accounts and leaderboard
 
-`render.yaml` defines a free-tier Node web service (Render requires a card for
-identity verification). Choose **New → Blueprint**, pick this repo, and set
-`XMR_WALLET` when prompted.
+Create an account or sign in from the header. Anonymous mining remains
+available, but only signed-in miners are credited. The leaderboard counts
+pool-verified shares multiplied by the difficulty of each accepted share; the
+browser hashrate is only a local measurement. Passwords are hashed with
+PBKDF2-SHA256 in a SQLite-backed Durable Object, and session cookies are
+HttpOnly, Secure, and expire after 30 days.
 
 ## Deploying to Cloudflare Workers (free, no card)
 
@@ -59,8 +62,16 @@ For a local deployment, authenticate with Wrangler and deploy with:
 ```sh
 npx wrangler login
 wrangler secret put XMR_WALLET
-XMR_WALLET=44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A npm run cf:deploy
+wrangler secret put POOL_FIXED_DIFF
+npm run cf:deploy
 ```
+
+`npm run dev` builds the frontend and starts Wrangler on port 8787. For local
+secrets, create `.dev.vars` with `XMR_WALLET` and optionally
+`POOL_FIXED_DIFF`; this file is ignored by git.
+
+The account API is available at `POST /api/register`, `POST /api/login`,
+`POST /api/logout`, `GET /api/me`, and `GET /api/leaderboard`.
 
 ## Verifying RandomX
 

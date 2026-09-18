@@ -11,3 +11,12 @@ not_found_handling = "single-page-application"
 [vars]
 POOL_HOST = "pool.supportxmr.com"
 POOL_PORT = "3333"
+POOL_FIXED_DIFF = "5000"
+
+[[durable_objects.bindings]]
+name = "STORE"
+class_name = "AppStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AppStore"]

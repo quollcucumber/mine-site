@@ -3,26 +3,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run web:dev\"",
-    "server": "node server/index.mjs",
+    "dev": "npm run build && wrangler dev --port 8787",
     "build": "npm run web:build",
-    "cf:dev": "npm run build && wrangler dev",
+    "cf:dev": "npm run build && wrangler dev --port 8787",
     "cf:deploy": "npm run build && wrangler deploy",
-    "start": "node server/index.mjs",
-    "test": "node test-vector.mjs && node bridge-test.mjs",
+    "test": "node test-vector.mjs && node bridge-test.mjs && node store-test.mjs",
     "lint": "tsc --noEmit -p web/tsconfig.json",
-    "web:dev": "vite --config web/vite.config.ts",
     "web:build": "vite build --config web/vite.config.ts"
   },
   "dependencies": {
-    "express": "^5.1.0",
-    "randomx.js": "^0.1.3",
-    "ws": "^8.18.3"
+    "randomx.js": "^0.1.3"
   },
   "devDependencies": {
     "@types/node": "^22.15.21",
-    "@types/ws": "^8.18.1",
-    "concurrently": "^9.1.2",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "wrangler": "4.80.0"

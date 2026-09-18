@@ -1,3 +1,5 @@
+import { targetToDifficulty } from "./auth.mjs";
+
 const walletPattern = /^[48][0-9A-Za-z]{94}$/;
 
 export function isValidWallet(wallet) {
@@ -8,7 +10,14 @@ function validHex(value, length) {
   return typeof value === "string" && value.length === length && /^[0-9a-f]+$/i.test(value);
 }
 
-export function createBridge({ wallet, sendToClient, writeToPool, closePool }) {
+export function createBridge({
+  wallet,
+  poolFixedDiff = "",
+  sendToClient,
+  writeToPool,
+  closePool,
+  onShareAccepted = () => {}
+}) {
   let buffer = "";
   let requestId = 1;
   let closed = false;
@@ -53,7 +62,12 @@ export function createBridge({ wallet, sendToClient, writeToPool, closePool }) {
         id,
         jsonrpc: "2.0",
         method: "login",
-        params: { login: wallet, pass: "x", agent: "mine-site/0.1", rigid: "" }
+        params: {
+          login: poolFixedDiff ? `${wallet}+${poolFixedDiff}` : wallet,
+          pass: "x",
+          agent: "mine-site/0.1",
+          rigid: ""
+        }
       })}\n`
     );
   };
@@ -103,7 +117,9 @@ export function createBridge({ wallet, sendToClient, writeToPool, closePool }) {
             error: message.error?.message || message.result?.status || "Share rejected"
           });
         } else {
-          sendToClient({ type: "accepted" });
+          const difficulty = targetToDifficulty(currentJobs.get(request.jobId)?.target || "");
+          sendToClient({ type: "accepted", difficulty });
+          onShareAccepted(difficulty);
         }
       }
     }
@@ -135,7 +151,7 @@ export function createBridge({ wallet, sendToClient, writeToPool, closePool }) {
     if (submissions.length >= 20) return sendToClient({ type: "error", error: "Submit rate limit exceeded" });
     submissions.push(now);
     const id = requestId++;
-    requests.set(id, { type: "submit" });
+    requests.set(id, { type: "submit", jobId });
     writeToPool(
       `${JSON.stringify({
         id,

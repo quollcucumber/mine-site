@@ -272,6 +272,7 @@ async function refreshAccount() {
     ? { points: data.points, rank: data.rank, player_count: data.player_count, group: data.group }
     : null;
   accountToggle.hidden = Boolean(currentUser);
+  heroAccount.hidden = Boolean(currentUser);
   accountForm.hidden = true;
   accountSignedIn.hidden = !currentUser;
   if (currentUser) {

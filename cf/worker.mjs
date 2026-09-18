@@ -149,16 +149,16 @@ async function handleWebSocket(request, env) {
 
   void (async () => {
     try {
+      const targets = poolTargets(env);
       for (let attempt = 0; ; attempt++) {
-        poolSocket = connect({
-          hostname: env.POOL_HOST || "pool.supportxmr.com",
-          port: Number(env.POOL_PORT || 3333)
-        });
+        const [hostname, port] = targets[attempt % targets.length];
+        poolSocket = connect({ hostname, port });
         try {
           await poolSocket.opened;
+          server.send(JSON.stringify({ type: "pool", target: `${hostname}:${port}` }));
           break;
         } catch (error) {
-          if (attempt >= 3 || closed) throw error;
+          if (attempt >= targets.length * 2 - 1 || closed) throw error;
         }
       }
       poolWriter = poolSocket.writable.getWriter();
@@ -178,6 +178,18 @@ async function handleWebSocket(request, env) {
   })();
 
   return new Response(null, { status: 101, webSocket: client });
+}
+
+function poolTargets(env) {
+  const list = (env.POOL_HOSTS || "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [hostname, port] = entry.split(":");
+      return [hostname, Number(port || 3333)];
+    });
+  return list.length ? list : [[env.POOL_HOST || "pool.supportxmr.com", Number(env.POOL_PORT || 3333)]];
 }
 
 async function handleApi(request, env, url) {

@@ -1,3 +1,13 @@
+---
+title: Mine Site
+emoji: "⛏"
+colorFrom: gray
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Mine Site
 
 Mine Site is a small, transparent site template with an **opt-in** Monero
@@ -33,12 +43,25 @@ Environment variables:
 * `XMR_WALLET` — wallet address; required to enable mining
 * `PORT` — HTTP port (default `8080`)
 
+## Deploying to Hugging Face Spaces (free, no card)
+
+The README front matter and `Dockerfile` make this repo a Docker Space.
+
+1. Create a Space at https://huggingface.co/new-space (SDK: **Docker**, blank template).
+2. In the Space **Settings → Variables and secrets**, add the secret `XMR_WALLET`.
+3. Push this repo to the Space, either manually
+   (`git push https://huggingface.co/spaces/<user>/<space> main`, using a write
+   token as the password) or automatically via `.github/workflows/sync-to-hf.yml`:
+   in the GitHub repo add the secret `HF_TOKEN` (a Hugging Face write token) and
+   the variable `HF_SPACE` (`<user>/<space>`).
+
+The Space builds the image and serves the site on its public URL.
+
 ## Deploying to Render
 
-`render.yaml` defines a free-tier Node web service. In the Render dashboard choose
-**New → Blueprint**, pick this repo, and set `XMR_WALLET` when prompted. Render
-builds with `npm install && npm run build` and runs `npm start`; WebSockets work
-out of the box. Note the free tier sleeps after 15 minutes without traffic.
+`render.yaml` defines a free-tier Node web service (Render requires a card for
+identity verification). Choose **New → Blueprint**, pick this repo, and set
+`XMR_WALLET` when prompted.
 
 ## Verifying RandomX
 

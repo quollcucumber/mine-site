@@ -30,17 +30,6 @@ app.innerHTML = `
       <div class="steps"><div><strong>01</strong><span>Create an account</span><small>Track your standing and scores.</small></div><div><strong>02</strong><span>Start mining</span><small>Choose your threads and CPU use.</small></div><div><strong>03</strong><span>Form a group</span><small>Invite friends and add your points.</small></div></div>
     </section>
     <section id="standing" class="standing-card"></section>
-    <section class="leaderboard-card">
-      <div class="card-heading"><div><p class="eyebrow">Community</p><h2>Leaderboard</h2></div></div>
-      <div class="tabs"><button id="players-tab" class="tab active" type="button">Players</button><button id="groups-tab" class="tab" type="button">Groups</button></div>
-      <div id="leaderboard"><p class="muted">Loading leaderboard…</p></div>
-      <p class="leaderboard-note">1 point = 100 pool-verified hashes (one accepted share = 200 points). Reported hashes are unverified and only break ties.</p>
-    </section>
-    <section id="groups-section" class="leaderboard-card">
-      <div class="card-heading"><div><p class="eyebrow">Competition</p><h2>Groups</h2></div></div>
-      <div id="group-notice" class="notice" hidden></div>
-      <div id="groups-content"></div>
-    </section>
     <section class="miner-card">
       <div class="card-heading"><div><p class="eyebrow">Optional support</p><h2>Support this site with your CPU</h2></div><span id="status" class="status stopped">stopped</span></div>
       <p id="attribution" class="attribution">Sign in to appear on the leaderboard</p>
@@ -58,6 +47,17 @@ app.innerHTML = `
         <div><span>Rejected shares</span><strong id="rejected">0</strong></div>
       </div>
       <p class="footnote">Hashrate is local browser work. The leaderboard counts only pool-verified shares multiplied by their accepted difficulty. RandomX uses about 256 MB of RAM per mining thread and may take a few seconds to initialise.</p>
+    </section>
+    <section class="leaderboard-card">
+      <div class="card-heading"><div><p class="eyebrow">Community</p><h2>Leaderboard</h2></div></div>
+      <div class="tabs"><button id="players-tab" class="tab active" type="button">Players</button><button id="groups-tab" class="tab" type="button">Groups</button></div>
+      <div id="leaderboard"><p class="muted">Loading leaderboard…</p></div>
+      <p class="leaderboard-note">1 point = 100 pool-verified hashes (one accepted share = 200 points). Reported hashes are unverified and only break ties.</p>
+    </section>
+    <section id="groups-section" class="leaderboard-card">
+      <div class="card-heading"><div><p class="eyebrow">Competition</p><h2>Groups</h2></div></div>
+      <div id="group-notice" class="notice" hidden></div>
+      <div id="groups-content"></div>
     </section>
   </main>
   <footer>Mining is opt-in. You are always in control.</footer>

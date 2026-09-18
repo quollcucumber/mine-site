@@ -47,7 +47,7 @@ Pages overview page. Add these GitHub Actions secrets to the repository:
 
 * `CLOUDFLARE_API_TOKEN`
 * `CLOUDFLARE_ACCOUNT_ID`
-* `XMR_WALLET`
+* `XMR_WALLET` (optional until you have a wallet; the site deploys with mining disabled)
 
 The `Deploy to Cloudflare` workflow builds the site and deploys it on every
 push to `main`, or from the Actions tab with **Run workflow**. The first

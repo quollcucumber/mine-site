@@ -149,12 +149,19 @@ async function handleWebSocket(request, env) {
 
   void (async () => {
     try {
-      poolSocket = connect({
-        hostname: env.POOL_HOST || "pool.supportxmr.com",
-        port: Number(env.POOL_PORT || 3333)
-      });
+      for (let attempt = 0; ; attempt++) {
+        poolSocket = connect({
+          hostname: env.POOL_HOST || "pool.supportxmr.com",
+          port: Number(env.POOL_PORT || 3333)
+        });
+        try {
+          await poolSocket.opened;
+          break;
+        } catch (error) {
+          if (attempt >= 3 || closed) throw error;
+        }
+      }
       poolWriter = poolSocket.writable.getWriter();
-      await poolSocket.opened;
       bridge.onPoolConnect();
       const reader = poolSocket.readable.pipeThrough(new TextDecoderStream()).getReader();
       while (!closed) {

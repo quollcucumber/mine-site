@@ -363,12 +363,24 @@ async function startMining() {
   toggle.textContent = "Stop mining";
   toggle.classList.add("active");
   showNotice("");
-  setStatus("connecting", "connecting");
+  reconnectAttempts = 0;
+  connectSocket();
+}
+let reconnectAttempts = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+function connectSocket() {
+  setStatus(reconnectAttempts ? `reconnecting (attempt ${reconnectAttempts})` : "connecting", "connecting");
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   socket = new WebSocket(`${protocol}//${location.host}/ws`);
   socket.onopen = () => {
-    setStatus("initialising RandomX cache", "initialising");
-    workers = Array.from({ length: Number(threadsSelect.value) }, createWorker);
+    reconnectAttempts = 0;
+    showNotice("");
+    if (workers.length) {
+      setStatus("waiting for job", "connecting");
+    } else {
+      setStatus("initialising RandomX cache", "initialising");
+      workers = Array.from({ length: Number(threadsSelect.value) }, createWorker);
+    }
   };
   socket.onmessage = ({ data }) => {
     const message = JSON.parse(data) as ServerMessage;
@@ -394,19 +406,19 @@ async function startMining() {
       rejected++;
       updateStats();
     } else if (message.type === "error") {
-      setStatus("error", "error");
-      showNotice(message.error || "Pool error");
+      showNotice(`${message.error || "Pool error"} — reconnecting…`);
     }
   };
-  socket.onerror = () => {
-    setStatus("error", "error");
-    showNotice("Unable to connect to the mining pool");
-  };
+  socket.onerror = () => {};
   socket.onclose = () => {
-    if (running) {
-      setStatus("error", "error");
-      showNotice("Connection to pool closed");
-    }
+    if (!running) return;
+    reconnectAttempts++;
+    const delay = Math.min(30000, 1000 * 2 ** Math.min(reconnectAttempts - 1, 5));
+    setStatus(`reconnecting in ${Math.round(delay / 1000)}s`, "connecting");
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (running) connectSocket();
+    }, delay);
   };
 }
 function stopMining() {
@@ -416,6 +428,8 @@ function stopMining() {
     worker.terminate();
   });
   workers = [];
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
   socket?.close();
   socket = null;
   toggle.textContent = "Start mining";

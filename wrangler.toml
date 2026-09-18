@@ -1,6 +1,7 @@
 name = "mine-site"
 main = "cf/worker.mjs"
 compatibility_date = "2026-04-08"
+workers_dev = true
 
 [assets]
 directory = "web/dist"

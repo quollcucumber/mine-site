@@ -184,7 +184,53 @@ export class AppStore {
 
   async me({ token }) {
     const session = await this.session(token);
-    return { user: session?.user || null };
+    if (!session) return { user: null, points: 0, rank: null, player_count: 0, group: null };
+    const player = this.ctx.storage.sql.exec(
+      `WITH player_scores AS (
+         SELECT u.id AS user_id,
+                COALESCE(s.verified_hashes, 0) AS verified_hashes,
+                COALESCE(s.reported_hashes, 0) AS reported_hashes
+         FROM users u LEFT JOIN stats s ON s.user_id = u.id
+       )
+       SELECT ps.verified_hashes,
+              (SELECT COUNT(*) FROM player_scores higher
+               WHERE higher.verified_hashes > ps.verified_hashes
+                  OR (higher.verified_hashes = ps.verified_hashes
+                      AND higher.reported_hashes > ps.reported_hashes)) + 1 AS rank,
+              (SELECT COUNT(*) FROM player_scores) AS player_count
+       FROM player_scores ps
+       WHERE ps.user_id = ?`,
+      session.id
+    ).toArray()[0];
+    const group = this.ctx.storage.sql.exec(
+      `WITH group_scores AS (
+         SELECT g.id, g.name,
+                COALESCE(SUM(s.verified_hashes), 0) AS verified_hashes,
+                COALESCE(SUM(s.reported_hashes), 0) AS reported_hashes
+         FROM groups g
+         LEFT JOIN group_members gm ON gm.group_id = g.id
+         LEFT JOIN stats s ON s.user_id = gm.user_id
+         GROUP BY g.id
+       )
+       SELECT gs.id, gs.name,
+              (SELECT COUNT(*) FROM group_scores higher
+               WHERE higher.verified_hashes > gs.verified_hashes
+                  OR (higher.verified_hashes = gs.verified_hashes
+                      AND higher.reported_hashes > gs.reported_hashes)) + 1 AS rank
+       FROM group_scores gs
+       JOIN group_members gm ON gm.group_id = gs.id
+       WHERE gm.user_id = ?`,
+      session.id
+    ).toArray()[0] || null;
+    return {
+      user: session.user,
+      verified_hashes: player?.verified_hashes || 0,
+      reported_hashes: player?.reported_hashes || 0,
+      points: Math.floor((player?.verified_hashes || 0) / 100),
+      rank: player?.rank || null,
+      player_count: player?.player_count || 0,
+      group: group ? { id: group.id, name: group.name, rank: group.rank } : null
+    };
   }
 
   recordShare({ user_id: userId, difficulty }) {

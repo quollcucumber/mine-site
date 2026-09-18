@@ -7,11 +7,12 @@ type JobMessage = { type: "job"; job: Job };
 type LeaderboardEntry = { rank: number; username: string; verified_hashes: number; reported_hashes: number; shares: number; group_name: string | null };
 type Group = { id: number; name: string; is_open: boolean; member_count?: number };
 type GroupMember = { user_id: number; username: string; role: "owner" | "admin" | "member"; verified_hashes: number; reported_hashes: number };
+type Standing = { points: number; rank: number | null; player_count: number; group: { id: number; name: string; rank: number } | null };
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <header>
-    <div><div class="brand">Mine Site</div><span class="tagline">A small site with a transparent CPU option</span></div>
+    <div><div class="brand">Mine Site</div><span class="tagline">Browser mining leaderboard</span></div>
     <div class="account-panel">
       <button id="account-toggle" class="account-toggle" type="button">Sign in / Create account</button>
       <div id="account-form" class="account-form" hidden>
@@ -24,7 +25,22 @@ app.innerHTML = `
     </div>
   </header>
   <main>
-    <section class="welcome"><p class="eyebrow">Welcome</p><h1>Site content goes here</h1><p class="muted">Coming soon. In the meantime, you can optionally support hosting costs with your CPU.</p></section>
+    <section class="hero">
+      <div class="hero-copy"><p class="eyebrow">Competition starts here</p><h1>Mine. Score. Climb the ranks.</h1><p class="hero-sub">Turn spare CPU into points, solo or with your group. Every pool-verified share is worth 200 points.</p><div class="hero-actions"><button id="hero-start" class="toggle" type="button">Start mining</button><button id="hero-account" class="secondary-button" type="button">Create an account</button></div></div>
+      <div class="steps"><div><strong>01</strong><span>Create an account</span><small>Track your standing and scores.</small></div><div><strong>02</strong><span>Start mining</span><small>Choose your threads and CPU use.</small></div><div><strong>03</strong><span>Form a group</span><small>Invite friends and add your points.</small></div></div>
+    </section>
+    <section id="standing" class="standing-card"></section>
+    <section class="leaderboard-card">
+      <div class="card-heading"><div><p class="eyebrow">Community</p><h2>Leaderboard</h2></div></div>
+      <div class="tabs"><button id="players-tab" class="tab active" type="button">Players</button><button id="groups-tab" class="tab" type="button">Groups</button></div>
+      <div id="leaderboard"><p class="muted">Loading leaderboard…</p></div>
+      <p class="leaderboard-note">1 point = 100 pool-verified hashes (one accepted share = 200 points). Reported hashes are unverified and only break ties.</p>
+    </section>
+    <section id="groups-section" class="leaderboard-card">
+      <div class="card-heading"><div><p class="eyebrow">Competition</p><h2>Groups</h2></div></div>
+      <div id="group-notice" class="notice" hidden></div>
+      <div id="groups-content"></div>
+    </section>
     <section class="miner-card">
       <div class="card-heading"><div><p class="eyebrow">Optional support</p><h2>Support this site with your CPU</h2></div><span id="status" class="status stopped">stopped</span></div>
       <p id="attribution" class="attribution">Sign in to appear on the leaderboard</p>
@@ -42,16 +58,6 @@ app.innerHTML = `
         <div><span>Rejected shares</span><strong id="rejected">0</strong></div>
       </div>
       <p class="footnote">Hashrate is local browser work. The leaderboard counts only pool-verified shares multiplied by their accepted difficulty. RandomX uses about 256 MB of RAM per mining thread and may take a few seconds to initialise.</p>
-    </section>
-    <section class="leaderboard-card">
-      <div class="card-heading"><div><p class="eyebrow">Community</p><h2>Leaderboard</h2></div></div>
-      <div class="tabs"><button id="players-tab" class="tab active" type="button">Players</button><button id="groups-tab" class="tab" type="button">Groups</button></div>
-      <div id="leaderboard"><p class="muted">Loading leaderboard…</p></div>
-    </section>
-    <section id="groups-section" class="leaderboard-card">
-      <div class="card-heading"><div><p class="eyebrow">Competition</p><h2>Groups</h2></div></div>
-      <div id="group-notice" class="notice" hidden></div>
-      <div id="groups-content"></div>
     </section>
   </main>
   <footer>Mining is opt-in. You are always in control.</footer>
@@ -74,6 +80,9 @@ const accountPassword = document.querySelector<HTMLInputElement>("#account-passw
 const accountNotice = document.querySelector<HTMLParagraphElement>("#account-notice")!;
 const accountSignedIn = document.querySelector<HTMLDivElement>("#account-signed-in")!;
 const attribution = document.querySelector<HTMLParagraphElement>("#attribution")!;
+const standing = document.querySelector<HTMLElement>("#standing")!;
+const heroStart = document.querySelector<HTMLButtonElement>("#hero-start")!;
+const heroAccount = document.querySelector<HTMLButtonElement>("#hero-account")!;
 const leaderboard = document.querySelector<HTMLDivElement>("#leaderboard")!;
 const playersTab = document.querySelector<HTMLButtonElement>("#players-tab")!;
 const groupsTab = document.querySelector<HTMLButtonElement>("#groups-tab")!;
@@ -81,6 +90,7 @@ const groupsContent = document.querySelector<HTMLDivElement>("#groups-content")!
 const groupNotice = document.querySelector<HTMLDivElement>("#group-notice")!;
 
 let currentUser: User | null = null;
+let currentStanding: Standing | null = null;
 const maxThreads = Math.max(1, Math.min(navigator.hardwareConcurrency || 1, 4));
 for (let i = 1; i <= maxThreads; i++) threadsSelect.add(new Option(String(i), String(i)));
 threadsSelect.value = "1";
@@ -125,6 +135,19 @@ function formatHashes(value: number) {
   if (value >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
   return value.toLocaleString();
 }
+function formatPoints(verifiedHashes: number) {
+  return Math.floor(verifiedHashes / 100).toLocaleString();
+}
+function renderStanding() {
+  if (!currentUser || !currentStanding) {
+    standing.innerHTML = `<p class="muted">Sign in to track your rank</p>`;
+    return;
+  }
+  const group = currentStanding.group
+    ? `${escapeHtml(currentStanding.group.name)} · #${currentStanding.group.rank} group`
+    : "No group — create or join one";
+  standing.innerHTML = `<div><p class="eyebrow">Your standing</p><h2>${escapeHtml(currentUser.username)}</h2></div><div class="standing-stat"><span>Points</span><strong>${currentStanding.points.toLocaleString()}</strong></div><div class="standing-stat"><span>Player rank</span><strong>#${currentStanding.rank ?? "—"} <small>of ${currentStanding.player_count}</small></strong></div><div class="standing-group"><span>Group</span><strong>${group}</strong></div>`;
+}
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[character]!));
 }
@@ -144,15 +167,15 @@ async function refreshLeaderboard() {
       const data = await fetch("/api/leaderboard").then((response) => response.json() as Promise<{ leaderboard?: LeaderboardEntry[] }>);
       const rows = data.leaderboard || [];
       leaderboard.innerHTML = rows.length
-        ? `<table><thead><tr><th>Rank</th><th>Username</th><th>Group</th><th>Verified work</th><th>Reported hashes (unverified)</th><th>Shares</th></tr></thead><tbody>${rows.map((row) =>
-          `<tr><td>${row.rank}</td><td>${escapeHtml(row.username)}</td><td>${row.group_name ? escapeHtml(row.group_name) : "—"}</td><td>${formatHashes(row.verified_hashes)}</td><td>${formatHashes(row.reported_hashes)}</td><td>${row.shares.toLocaleString()}</td></tr>`).join("")}</tbody></table>`
+        ? `<table><thead><tr><th>Rank</th><th>Username</th><th>Group</th><th>Points</th><th class="reported-column">Reported hashes (unverified)</th><th>Shares</th></tr></thead><tbody>${rows.map((row) =>
+          `<tr><td>${row.rank}</td><td>${escapeHtml(row.username)}</td><td>${row.group_name ? escapeHtml(row.group_name) : "—"}</td><td>${formatPoints(row.verified_hashes)}</td><td class="reported-column">${formatHashes(row.reported_hashes)}</td><td>${row.shares.toLocaleString()}</td></tr>`).join("")}</tbody></table>`
         : `<p class="muted">No leaderboard activity yet.</p>`;
     } else {
       const data = await fetch("/api/leaderboard/groups").then((response) => response.json() as Promise<{ leaderboard?: Array<{ name: string; member_count: number; verified_hashes: number; reported_hashes: number }> }>);
       const rows = data.leaderboard || [];
       leaderboard.innerHTML = rows.length
-        ? `<table><thead><tr><th>Rank</th><th>Group</th><th>Members</th><th>Verified work</th><th>Reported hashes (unverified)</th></tr></thead><tbody>${rows.map((row, index) =>
-          `<tr><td>${index + 1}</td><td>${escapeHtml(row.name)}</td><td>${row.member_count}</td><td>${formatHashes(row.verified_hashes)}</td><td>${formatHashes(row.reported_hashes)}</td></tr>`).join("")}</tbody></table>`
+        ? `<table><thead><tr><th>Rank</th><th>Group</th><th>Members</th><th>Points</th><th class="reported-column">Reported hashes (unverified)</th></tr></thead><tbody>${rows.map((row, index) =>
+          `<tr><td>${index + 1}</td><td>${escapeHtml(row.name)}</td><td>${row.member_count}</td><td>${formatPoints(row.verified_hashes)}</td><td class="reported-column">${formatHashes(row.reported_hashes)}</td></tr>`).join("")}</tbody></table>`
         : `<p class="muted">No groups yet.</p>`;
     }
   } catch {
@@ -179,13 +202,13 @@ async function refreshGroups() {
     } else {
       const owner = mine.my_role === "owner";
       const manager = owner || mine.my_role === "admin";
-      groupsContent.innerHTML = `${inviteHtml}<div class="group-card"><div class="group-card-heading"><h3>${escapeHtml(mine.group.name)}</h3><span class="badge">${mine.group.is_open ? "Open" : "Invite-only"}</span></div>${owner ? `<div class="inline-form"><input id="rename-group" value="${escapeHtml(mine.group.name)}" maxlength="24" /><label><input id="group-open" type="checkbox" ${mine.group.is_open ? "checked" : ""} /> Open group</label><button data-group-action="update" type="button">Save</button></div>` : ""}<table><thead><tr><th>Username</th><th>Role</th><th>Verified</th><th>Reported</th><th></th></tr></thead><tbody>${mine.members.map((member) => {
+      groupsContent.innerHTML = `${inviteHtml}<div class="group-card"><div class="group-card-heading"><h3>${escapeHtml(mine.group.name)}</h3><span class="badge">${mine.group.is_open ? "Open" : "Invite-only"}</span></div>${owner ? `<div class="inline-form"><input id="rename-group" value="${escapeHtml(mine.group.name)}" maxlength="24" /><label><input id="group-open" type="checkbox" ${mine.group.is_open ? "checked" : ""} /> Open group</label><button data-group-action="update" type="button">Save</button></div>` : ""}<table><thead><tr><th>Username</th><th>Role</th><th>Points</th><th class="reported-column">Reported</th><th></th></tr></thead><tbody>${mine.members.map((member) => {
         const actions = owner && member.user_id !== currentUser!.id
           ? `<button data-member-action="role" data-role="${member.role === "admin" ? "member" : "admin"}" data-member-id="${member.user_id}" type="button">${member.role === "admin" ? "Demote" : "Promote"}</button><button data-member-action="transfer" data-member-id="${member.user_id}" type="button">Transfer</button><button data-member-action="kick" data-member-id="${member.user_id}" type="button">Kick</button>`
           : mine.my_role === "admin" && member.role === "member"
             ? `<button data-member-action="kick" data-member-id="${member.user_id}" type="button">Kick</button>`
             : "";
-        return `<tr><td>${escapeHtml(member.username)}</td><td>${member.role}</td><td>${formatHashes(member.verified_hashes)}</td><td>${formatHashes(member.reported_hashes)}</td><td>${actions}</td></tr>`;
+        return `<tr><td>${escapeHtml(member.username)}</td><td>${member.role}</td><td>${formatPoints(member.verified_hashes)}</td><td class="reported-column">${formatHashes(member.reported_hashes)}</td><td>${actions}</td></tr>`;
       }).join("")}</tbody></table>${manager ? `<div class="inline-form"><input id="invite-username" placeholder="Username to invite" /><button data-group-action="invite" type="button">Invite</button></div>` : ""}<div class="group-actions"><button data-group-action="leave" type="button">Leave group</button>${owner ? `<button data-group-action="delete" type="button">Delete group</button>` : ""}</div></div>`;
     }
     groupsContent.querySelectorAll<HTMLButtonElement>("[data-group-action]").forEach((button) => button.addEventListener("click", () => void handleGroupAction(button.dataset.groupAction!, button)));
@@ -243,8 +266,11 @@ async function handleMemberAction(action: string, memberId: number, role?: strin
   }
 }
 async function refreshAccount() {
-  const data = await fetch("/api/me").then((response) => response.json() as Promise<{ user: User | null }>);
+  const data = await fetch("/api/me").then((response) => response.json() as Promise<{ user: User | null; points: number; rank: number | null; player_count: number; group: Standing["group"] }>);
   currentUser = data.user;
+  currentStanding = data.user
+    ? { points: data.points, rank: data.rank, player_count: data.player_count, group: data.group }
+    : null;
   accountToggle.hidden = Boolean(currentUser);
   accountForm.hidden = true;
   accountSignedIn.hidden = !currentUser;
@@ -259,6 +285,7 @@ async function refreshAccount() {
     accountSignedIn.textContent = "";
   }
   updateAttribution();
+  renderStanding();
   void refreshGroups();
 }
 async function accountAction(path: string) {
@@ -333,6 +360,7 @@ async function startMining() {
       accepted++;
       updateStats();
       void refreshLeaderboard();
+      void refreshAccount();
     } else if (message.type === "rejected") {
       rejected++;
       updateStats();
@@ -404,6 +432,7 @@ setInterval(refreshHashrate, 1000);
 setInterval(() => {
   void refreshLeaderboard();
   void refreshGroups();
+  void refreshAccount();
 }, 30_000);
 setInterval(() => {
   if (socket?.readyState === WebSocket.OPEN && progressSinceReport > 0) {
@@ -417,4 +446,14 @@ void refreshLeaderboard();
 void refreshGroups();
 void fetch("/api/config").then((response) => response.json() as Promise<Config>).then((config) => {
   if (!config.miningEnabled) showNotice("Mining not configured");
+});
+
+heroStart.addEventListener("click", () => document.querySelector(".miner-card")?.scrollIntoView({ behavior: "smooth" }));
+heroAccount.addEventListener("click", () => {
+  if (currentUser) {
+    document.querySelector("#groups-section")?.scrollIntoView({ behavior: "smooth" });
+  } else {
+    accountForm.hidden = false;
+    accountUsername.focus();
+  }
 });
